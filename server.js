@@ -9,9 +9,7 @@ const cors = require('cors');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: '*' } // Allow all origins (adjust later)
-});
+const io = new Server(server, { cors: { origin: '*' } }); // Adjust CORS later
 
 
 const upload = multer({ dest: 'uploads/' });
@@ -191,6 +189,6 @@ app.post('/upload', upload.single('file'), (req, res) => {
 });
 
 
-server.listen(process.env.PORT || 3000, '0.0.0.0', () => {
+server.listen(process.env.PORT || 3000, () => {
   console.log(`Server on port ${process.env.PORT || 3000}`);
-}); 
+});
