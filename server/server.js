@@ -42,6 +42,39 @@ const poolConfig = process.env.DATABASE_URL
 
 const pool = new Pool(poolConfig);
 
+// Create tables if they don’t exist
+pool.connect((err) => {
+  if (err) {
+    console.error('PostgreSQL connection error:', err);
+  } else {
+    console.log('Connected to PostgreSQL');
+    pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username VARCHAR(50) NOT NULL UNIQUE,
+        password VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS rooms (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(50) NOT NULL UNIQUE,
+        created_by INTEGER REFERENCES users(id),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        room_id INTEGER REFERENCES rooms(id),
+        user_id INTEGER REFERENCES users(id),
+        content TEXT NOT NULL,
+        sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        reactions JSONB DEFAULT '{}'
+      );
+    `)
+      .then(() => console.log('Database tables ensured'))
+      .catch(err => console.error('Table creation error:', err));
+  }
+});
+
 pool.connect((err) => {
   if (err) console.error('PostgreSQL connection error:', err);
   else console.log('Connected to PostgreSQL');
