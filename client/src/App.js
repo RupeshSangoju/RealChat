@@ -1,12 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
-import Peer from 'simple-peer';
+import VideoCall from './VideoCall';
 import './App.css';
-
-const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
-  autoConnect: true,
-  withCredentials: true, // Add this if backend requires credentials
-});
 
 function App() {
   const [username, setUsername] = useState('');
@@ -28,72 +23,90 @@ function App() {
   const [showWallpaperOptions, setShowWallpaperOptions] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [audioBlob, setAudioBlob] = useState(null);
-  const [callType, setCallType] = useState(null);
   const [inCall, setInCall] = useState(false);
-  const [peers, setPeers] = useState([]);
-  const [profilePic, setProfilePic] = useState(null);
-  const videoRef = useRef(null);
-  const peersRef = useRef([]);
+  const [callNotification, setCallNotification] = useState(null);
+  const [profilePics, setProfilePics] = useState({});
+  const [userId, setUserId] = useState(null);
+  const [error, setError] = useState(''); // Added for socket errors
+  const socketRef = useRef(null);
   const mediaRecorderRef = useRef(null);
 
+  // Initialize socket and set up listeners
   useEffect(() => {
+    if (socketRef.current) return;
+
+    const socket = io(process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000', {
+      transports: ['websocket', 'polling'],
+      reconnectionAttempts: 5,
+      reconnectionDelay: 1000,
+      withCredentials: true,
+    });
+    socketRef.current = socket;
+
     console.log('Setting up socket listeners');
-    socket.on('connect', () => console.log('Connected to server'));
+    socket.on('connect', () => {
+      console.log('Connected to server');
+      setError('');
+    });
+    socket.on('connect_error', (err) => {
+      console.error('Socket connection error:', err.message);
+      setError('Failed to connect to server. Please check if the server is running.');
+    });
     socket.on('registered', ({ userId, username: registeredUsername }) => {
       setIsAuthenticated(true);
       setUsername(registeredUsername);
+      setUserId(userId);
+      setError('');
     });
     socket.on('loggedIn', ({ userId, username: loggedInUsername }) => {
       setIsAuthenticated(true);
       setUsername(loggedInUsername);
+      setUserId(userId);
+      setError('');
     });
-    socket.on('message', (msg) => setMessages((prev) => [...prev, msg]));
-    socket.on('file', (fileData) => setMessages((prev) => [...prev, fileData]));
+    socket.on('message', (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
+    socket.on('file', (fileData) => {
+      setMessages((prev) => [...prev, fileData]);
+    });
     socket.on('typing', ({ username, isTyping }) => {
       setTypingUsers((prev) =>
-        isTyping ? [...prev, username] : prev.filter((u) => u !== username)
+        isTyping ? [...new Set([...prev, username])] : prev.filter((u) => u !== username)
       );
     });
-    socket.on('error', (msg) => alert(msg));
-    socket.on('messageHistory', (history) => setMessages(history));
+    socket.on('error', (msg) => {
+      setError(msg);
+    });
+    socket.on('messageHistory', (history) => {
+      setMessages(history);
+    });
     socket.on('reaction', ({ messageId, emoji, username }) => {
       setReactions((prev) => ({
         ...prev,
         [messageId]: [...(prev[messageId] || []), { emoji, username }],
       }));
     });
-    socket.on('userList', (userList) => setUsers(userList));
+    socket.on('userList', (userList) => {
+      setUsers(userList);
+    });
     socket.on('privateMessage', (msg) => {
       setMessages((prev) => [...prev, { ...msg, isPrivate: true }]);
-    });
-    socket.on('notification', ({ sender, message }) => {
-      alert(`${sender} mentioned you: ${message}`);
     });
     socket.on('voiceMessage', (data) => {
       setMessages((prev) => [...prev, data]);
     });
-    socket.on('incomingCall', ({ callType, initiator, socketId }) => {
-      if (window.confirm(`${initiator} started a ${callType} call. Join?`)) {
-        socket.emit('acceptCall', { room, callerSocketId: socketId, username });
-        joinCall(callType, socketId);
-      } else {
-        socket.emit('rejectCall', { room, callerSocketId: socketId, username });
-      }
+    socket.on('call-notification', ({ initiator, callType }) => {
+      setCallNotification({ initiator, callType });
     });
-    socket.on('callAccepted', ({ acceptor, socketId }) => {
-      const peer = addPeer(socketId, true);
-      peersRef.current.push({ peerId: socketId, peer, username: acceptor });
-      setPeers((prev) => [...prev, { peerId: socketId, peer, username: acceptor }]);
+    socket.on('profile-pic-update', ({ username, profilePicUrl }) => {
+      console.log('Received profile pic update:', { username, profilePicUrl });
+      setProfilePics((prev) => ({ ...prev, [username]: profilePicUrl }));
     });
-    socket.on('callRejected', ({ rejector }) => alert(`${rejector} rejected the call`));
-    socket.on('signal', ({ signal, fromSocketId }) => {
-      const peerData = peersRef.current.find((p) => p.peerId === fromSocketId);
-      if (peerData) peerData.peer.signal(signal);
-    });
-    socket.on('callEnded', () => endCall());
 
     return () => {
       socket.off('connect');
+      socket.off('connect_error');
       socket.off('registered');
       socket.off('loggedIn');
       socket.off('message');
@@ -104,46 +117,54 @@ function App() {
       socket.off('reaction');
       socket.off('userList');
       socket.off('privateMessage');
-      socket.off('notification');
       socket.off('voiceMessage');
-      socket.on('incomingCall');
-      socket.off('callAccepted');
-      socket.off('callRejected');
-      socket.off('signal');
-      socket.off('callEnded');
+      socket.off('call-notification');
+      socket.off('profile-pic-update');
+      socket.disconnect();
+      socketRef.current = null;
     };
-  }, [room]);
+  }, []);
 
   const register = () => {
-    if (username && password) socket.emit('register', { username, password });
+    if (username && password) {
+      socketRef.current.emit('register', { username, password });
+    } else {
+      setError('Please enter username and password');
+    }
   };
 
   const login = () => {
-    if (username && password) socket.emit('login', { username, password });
+    if (username && password) {
+      socketRef.current.emit('login', { username, password });
+    } else {
+      setError('Please enter username and password');
+    }
   };
 
   const joinRoom = () => {
     if (room) {
-      socket.emit('joinRoom', room);
+      socketRef.current.emit('joinRoom', room);
       setJoined(true);
+    } else {
+      setError('Please enter a room name');
     }
   };
 
   const sendMessage = () => {
     if (message && room) {
       if (privateRecipient) {
-        socket.emit('privateMessage', { toUsername: privateRecipient, message, fromUsername: username });
+        socketRef.current.emit('privateMessage', { toUsername: privateRecipient, message, fromUsername: username });
       } else {
-        socket.emit('chatMessage', { room, message, username });
+        socketRef.current.emit('chatMessage', { room, message, username });
       }
       setMessage('');
-      socket.emit('typing', { room, username, isTyping: false });
+      socketRef.current.emit('typing', { room, username, isTyping: false });
     }
   };
 
   const handleTyping = (e) => {
     setMessage(e.target.value);
-    socket.emit('typing', { room, username, isTyping: e.target.value.length > 0 });
+    socketRef.current.emit('typing', { room, username, isTyping: e.target.value.length > 0 });
   };
 
   const sendFile = async () => {
@@ -158,12 +179,12 @@ function App() {
         });
         if (!response.ok) throw new Error(`Upload failed with status: ${response.status}`);
         const { fileUrl, fileType } = await response.json();
-        socket.emit('file', { room, fileUrl, fileType, sender: username });
+        socketRef.current.emit('file', { room, fileUrl, fileType, sender: username });
         setFile(null);
         setShowOptions(false);
       } catch (error) {
         console.error('File upload failed:', error);
-        alert('Failed to upload file: ' + error.message);
+        setError('Failed to upload file: ' + error.message);
       }
     }
   };
@@ -178,17 +199,35 @@ function App() {
     }
   };
 
-  const handleProfilePic = (e) => {
+  const handleProfilePic = async (e) => {
     const file = e.target.files[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => setProfilePic(reader.result);
-      reader.readAsDataURL(file);
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file');
+        return;
+      }
+      const formData = new FormData();
+      formData.append('file', file);
+      try {
+        const backendUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:5000';
+        const response = await fetch(`${backendUrl}/upload`, {
+          method: 'POST',
+          body: formData,
+        });
+        if (!response.ok) throw new Error(`Upload failed with status: ${response.status}`);
+        const { fileUrl } = await response.json();
+        console.log('Profile pic uploaded:', { fileUrl });
+        setProfilePics((prev) => ({ ...prev, [username]: fileUrl }));
+        socketRef.current.emit('profile-pic-update', { room, username, profilePicUrl: fileUrl });
+      } catch (error) {
+        console.error('Profile pic upload failed:', error);
+        setError('Failed to upload profile picture: ' + error.message);
+      }
     }
   };
 
   const addReaction = (messageId, emoji) => {
-    socket.emit('react', { room, messageId, emoji, username });
+    socketRef.current.emit('react', { room, messageId, emoji, username });
   };
 
   const startRecording = async () => {
@@ -206,7 +245,7 @@ function App() {
       setIsRecording(true);
     } catch (error) {
       console.error('Failed to start recording:', error);
-      alert('Could not access microphone');
+      setError('Could not access microphone');
     }
   };
 
@@ -231,90 +270,24 @@ function App() {
           return response.json();
         })
         .then(({ fileUrl, fileType }) => {
-          socket.emit('voiceMessage', { room, fileUrl, fileType: 'audio/webm', sender: username });
+          socketRef.current.emit('voiceMessage', { room, fileUrl, fileType: 'audio/webm', sender: username });
           setAudioBlob(null);
           setShowOptions(false);
         })
         .catch((error) => {
           console.error('Voice message upload failed:', error);
-          alert('Failed to send voice message');
+          setError('Failed to send voice message');
         });
     }
   };
 
-  const startCall = async (type) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: type === 'video',
-        audio: true,
-      });
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      setCallType(type);
-      setInCall(true);
-      socket.emit('startCall', { room, callType: type, username });
-      setShowOptions(false);
-    } catch (error) {
-      console.error('Failed to start call:', error);
-      alert('Could not access camera/microphone: ' + error.message);
-      setInCall(false);
-    }
+  const handleJoinCall = () => {
+    setInCall(true);
+    setCallNotification(null);
   };
 
-  const joinCall = async (type, callerSocketId) => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: type === 'video',
-        audio: true,
-      });
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-      setCallType(type);
-      setInCall(true);
-      const peer = addPeer(callerSocketId, false, stream);
-      peersRef.current.push({ peerId: callerSocketId, peer, username });
-      setPeers((prev) => [...prev, { peerId: callerSocketId, peer, username }]);
-    } catch (error) {
-      console.error('Failed to join call:', error);
-      alert('Could not access camera/microphone: ' + error.message);
-      setInCall(false);
-    }
-  };
-
-  const addPeer = (peerSocketId, initiator, stream) => {
-    const peer = new Peer({
-      initiator,
-      trickle: false,
-      stream: stream || videoRef.current.srcObject,
-      config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] },
-    });
-    peer.on('signal', (signal) => {
-      socket.emit('signal', { toSocketId: peerSocketId, signal });
-    });
-    peer.on('stream', (remoteStream) => {
-      setPeers((prev) => {
-        if (!prev.some((p) => p.peerId === peerSocketId)) {
-          return [...prev, { peerId: peerSocketId, peer, stream: remoteStream, username: peerSocketId }];
-        }
-        return prev;
-      });
-    });
-    peer.on('error', (err) => console.error('Peer error:', err));
-    return peer;
-  };
-
-  const endCall = () => {
-    if (!inCall) return;
-    peersRef.current.forEach((p) => p.peer && p.peer.destroy());
-    peersRef.current = [];
-    setPeers([]);
-    setInCall(false);
-    setCallType(null);
-    if (videoRef.current && videoRef.current.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((track) => track.stop());
-      videoRef.current.srcObject = null;
-    }
-    socket.emit('endCall', { room });
+  const handleDismissCall = () => {
+    setCallNotification(null);
   };
 
   const renderMessage = (msg, index) => {
@@ -369,7 +342,13 @@ function App() {
   };
 
   return (
-    <div className={`app-container ${theme}`} style={{ backgroundImage: wallpaper ? `url(${wallpaper})` : 'none', backgroundSize: 'cover' }}>
+    <div className={`app-container ${theme} ${inCall ? 'call-active' : ''}`} style={{ backgroundImage: wallpaper ? `url(${wallpaper})` : 'none', backgroundSize: 'cover' }}>
+      {error && (
+        <div className="error-message">
+          {error}
+          <button onClick={() => setError('')} className="dismiss-error-btn">Dismiss</button>
+        </div>
+      )}
       {!isAuthenticated ? (
         <div className="login-container animate-page">
           <h1 className="title animate-title">
@@ -442,8 +421,13 @@ function App() {
           <div className="user-list">
             Online: {users.map((user, i) => (
               <span key={i} className="user">
-                {profilePic && user === username ? (
-                  <img src={profilePic} alt="Profile" className="profile-pic" />
+                {profilePics[user] ? (
+                  <img src={profilePics[user]} alt="Profile" className="profile-pic" 
+                  onError={(e) => {
+                    console.error('Profile pic failed to load:', profilePics[user]);
+                    e.target.src = '/default-pic.png'; // Fallback image
+                  }}
+                  />
                 ) : (
                   <span className="default-pic">{user[0]}</span>
                 )}
@@ -455,6 +439,13 @@ function App() {
               Set Profile Pic
             </label>
           </div>
+          {callNotification && (
+            <div className="call-notification animate-notification">
+              {callNotification.initiator} started a {callNotification.callType} call
+              <button onClick={handleJoinCall} className="join-call-btn animate-btn">Join</button>
+              <button onClick={handleDismissCall} className="dismiss-btn animate-btn">Dismiss</button>
+            </div>
+          )}
           <div className="chat-messages">
             {messages.map((msg, index) => renderMessage(msg, index))}
             {typingUsers.length > 0 && (
@@ -494,9 +485,26 @@ function App() {
                 <button onClick={sendFile} className="share-btn animate-btn" disabled={!file}>
                   Share File
                 </button>
-                <button onClick={() => startCall('voice')} className="call-btn animate-btn">Voice Call</button>
-                <button onClick={() => startCall('video')} className="call-btn animate-btn">Video Call</button>
-                {inCall && <button onClick={endCall} className="end-call-btn animate-btn">End Call</button>}
+                <button
+                  onClick={() => {
+                    socketRef.current.emit('start-video-call', { room, username, callType: 'video' });
+                    setInCall(true);
+                    setShowOptions(false);
+                  }}
+                  className="call-btn animate-btn"
+                >
+                  Video Call
+                </button>
+                <button
+                  onClick={() => {
+                    socketRef.current.emit('start-video-call', { room, username, callType: 'voice' });
+                    setInCall(true);
+                    setShowOptions(false);
+                  }}
+                  className="call-btn animate-btn"
+                >
+                  Voice Call
+                </button>
                 <button onClick={isRecording ? stopRecording : startRecording} className="record-btn animate-btn">
                   {isRecording ? 'Stop Recording' : 'Record Voice'}
                 </button>
@@ -506,17 +514,15 @@ function App() {
               </div>
             )}
           </div>
-          <div className="video-container">
-            <video ref={videoRef} muted className={`local-video ${inCall ? 'visible' : ''}`} />
-            {peers.map((peer) => (
-              <video
-                key={peer.peerId}
-                autoPlay
-                ref={(video) => video && (video.srcObject = peer.stream)}
-                className="peer-video"
-              />
-            ))}
-          </div>
+          <VideoCall
+            socket={socketRef.current}
+            room={room}
+            userId={userId}
+            username={username}
+            inCall={inCall}
+            setInCall={setInCall}
+            callType={callNotification?.callType || 'video'}
+          />
         </div>
       )}
     </div>

@@ -16,22 +16,30 @@
 .app-container.light-blue {
   background: linear-gradient(135deg, #74b9ff, #a3dffa);
 }
-/* Smooth fade-in for elements */
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
-}
+
 /* Login Page */
 .login-container {
-  background: rgba(255, 255, 255, 0.9);
-  padding: 40px;
-  border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+  background: linear-gradient(145deg, #ffffff, #f0f0f0);
+  padding: 50px;
+  border-radius: 25px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
   text-align: center;
-  backdrop-filter: blur(15px);
-  animation: fadeIn 0.8s ease-out;
-
+  backdrop-filter: blur(20px);
+  animation: popIn 1s ease-out;
+  max-width: 400px;
 }
+
+.title {
+  font-size: 32px;
+  font-weight: bold;
+  background: linear-gradient(90deg, #00c6ff, #0072ff, #7f00ff);
+  background-clip: text;          /* <-- Standard version */
+  -webkit-background-clip: text;  /* <-- Webkit-specific */
+  -webkit-text-fill-color: transparent;
+  animation: pulse 2s infinite alternate;
+  margin-bottom: 30px;
+}
+
 
 .app-container.dark .login-container {
   background: rgba(44, 62, 80, 0.9);
@@ -46,13 +54,14 @@
 }
 
 .login-input {
-  padding: 12px;
-  width: 250px;
-  border: 2px solid #3867d6;
-  border-radius: 10px;
+  padding: 14px;
+  width: 100%;
+  border: 2px solid #00c6ff;
+  border-radius: 12px;
   font-size: 16px;
   outline: none;
-  transition: border-color 0.4s, box-shadow 0.3s;
+  transition: all 0.4s ease;
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .app-container.dark .login-input {
@@ -62,48 +71,66 @@
 }
 
 .login-input:focus {
-  border-color: #273c75;
-  box-shadow: 0 0 8px rgba(39, 60, 117, 0.5);
+  border-color: #7f00ff;
+  box-shadow: 0 0 12px #7f00ff80;
+  background: rgba(255, 255, 255, 1);
 }
 
 .button-group {
   display: flex;
-  gap: 10px;
+  gap: 15px;
   justify-content: center;
 }
 
-.action-btn {
-  padding: 12px 25px;
-  background-color: #3867d6;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
+.action-btn, .toggle-btn {
+  padding: 14px 28px;
   font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: linear-gradient(45deg, #00c6ff, #0072ff);
+  color: white;
+  transition: all 0.4s ease;
 }
-
 .app-container.dark .action-btn {
   background-color: #3498db;
 }
 
 .toggle-btn {
-  padding: 12px 25px;
-  background-color: #7f8c8d;
-  color: white;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  font-size: 16px;
+  background: linear-gradient(45deg, #ff6a00, #ee0979);
 }
+
 
 .app-container.dark .toggle-btn {
   background-color: #95a5a6;
 }
-
 .action-btn:hover,
 .toggle-btn:hover {
-  transform: scale(1.1) rotate(2deg);
-  background-color: #273c75;
+  transform: scale(1.08) rotate(2deg);
+  background-position: right center;
+}
+
+.animate-btn {
+  transition: transform 0.4s ease, background-color 0.4s ease;
+}
+
+.animate-btn:hover {
+  transform: scale(1.1) rotate(1deg);
+}
+
+/* Login page animation */
+@keyframes popIn {
+  0% { transform: scale(0.7); opacity: 0; }
+  80% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); }
+}
+
+/* Smooth pulse */
+@keyframes pulse {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
 }
 
 /* Join Room */
@@ -408,7 +435,7 @@
   color: #7f8c8d;
   font-style: italic;
   padding: 10px;
-  animation: fadeIn 1.5s infinite alternate;
+  animation: fadeInOut 1.5s infinite alternate;
 }
 
 .app-container.dark .typing-indicator {
@@ -595,37 +622,14 @@
   color: #ecf0f1;
 }
 
+/* Video Container (Minimal, as most styling is in VideoCall.css) */
 .video-container {
   padding: 10px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  background: rgba(255, 255, 255, 0.8);
+  margin-top: 10px;
 }
 
 .app-container.dark .video-container {
   background: rgba(44, 62, 80, 0.8);
-}
-
-.local-video{
-  display: none; /* Hidden by default until inCall is true */
-}
-
-.local-video.visible {
-  display: block;
-}
-.peer-video {
-  width: 250px;
-  height: 180px;
-  border-radius: 10px;
-  border: 2px solid #3867d6;
-  background: #000;
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2);
-}
-
-.app-container.dark .local-video,
-.app-container.dark .peer-video {
-  border-color: #3498db;
 }
 
 /* Animations */
@@ -664,8 +668,8 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-page { animation: slideUp 0.8s ease-out; }
