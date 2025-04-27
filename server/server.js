@@ -31,26 +31,18 @@ app.use(cors({
 app.use(express.json());
 app.use('/Uploads', express.static(path.join(__dirname, 'Uploads')));
 
-// PostgreSQL setup
-const poolConfig = process.env.DATABASE_URL
-  ? {
-      connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-    }
-  : {
-      user: process.env.DB_USER || 'postgres',
-      host: process.env.DB_HOST || 'localhost',
-      database: process.env.DB_NAME || 'chat_app',
-      password: process.env.DB_PASSWORD || 'rupesh',
-      port: process.env.DB_PORT || 5432,
-    };
+// PostgreSQL setup for Render
+const poolConfig = {
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+};
 
 const pool = new Pool(poolConfig);
 
 // Create database tables
 pool.connect((err) => {
   if (err) {
-    console.error('PostgreSQL connection error:', err);
+    console.error('PostgreSQL connection error:', err.message, err.stack);
   } else {
     console.log('Connected to PostgreSQL');
     pool.query(`
@@ -76,18 +68,17 @@ pool.connect((err) => {
       );
     `)
       .then(() => console.log('Database tables ensured'))
-      .catch((err) => console.error('Table creation error:', err));
+      .catch((err) => console.error('Table creation error:', err.message, err.stack));
   }
 });
 
 // Video call room management
-const videoCallRooms = new Map(); // Map<roomName, { users: Set<userId> }>
-const socketToUserId = new Map(); // Map<socketId, userId>
+const videoCallRooms = new Map();
+const socketToUserId = new Map();
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
-  // Authentication
   socket.on('register', async ({ username, password }) => {
     try {
       const userCheck = await pool.query('SELECT * FROM users WHERE username = $1', [username]);
@@ -106,7 +97,7 @@ io.on('connection', (socket) => {
         console.log(`User registered: ${username} (ID: ${result.rows[0].id})`);
       }
     } catch (err) {
-      console.error('Register error:', err);
+      console.error('Register error:', err.message, err.stack);
       socket.emit('error', 'Registration failed');
     }
   });
@@ -124,12 +115,11 @@ io.on('connection', (socket) => {
         socket.emit('error', 'Invalid credentials');
       }
     } catch (err) {
-      console.error('Login error:', err);
+      console.error('Login error:', err.message, err.stack);
       socket.emit('error', 'Login failed');
     }
   });
 
-  // Chat room handling
   socket.on('joinRoom', async (room) => {
     try {
       if (!socket.username || !socket.userId) {
@@ -173,7 +163,7 @@ io.on('connection', (socket) => {
         console.log(`Message sent in room ${room} by ${username}: ${message}`);
       }
     } catch (err) {
-      console.error('Chat message error:', err);
+      console.error('Chat message error:', err.message, err.stack);
       socket.emit('error', 'Failed to send message');
     }
   });
@@ -200,7 +190,7 @@ io.on('connection', (socket) => {
         }
       }
     } catch (err) {
-      console.error('Private message error:', err);
+      console.error('Private message error:', err.message, err.stack);
       socket.emit('error', 'Failed to send private message');
     }
   });
@@ -225,7 +215,7 @@ io.on('connection', (socket) => {
         console.log(`File sent in room ${room} by ${sender}: ${fileUrl} (${fileType})`);
       }
     } catch (err) {
-      console.error('File message error:', err);
+      console.error('File message error:', err.message, err.stack);
       socket.emit('error', 'Failed to send file');
     }
   });
@@ -245,7 +235,7 @@ io.on('connection', (socket) => {
         console.log(`Voice message sent in room ${room} by ${sender}: ${fileUrl}`);
       }
     } catch (err) {
-      console.error('Voice message error:', err);
+      console.error('Voice message error:', err.message, err.stack);
       socket.emit('error', 'Failed to send voice message');
     }
   });
@@ -259,7 +249,7 @@ io.on('connection', (socket) => {
       io.to(room).emit('reaction', { messageId, emoji, username });
       console.log(`Reaction added in room ${room}: ${emoji} by ${username} on message ${messageId}`);
     } catch (err) {
-      console.error('Reaction error:', err);
+      console.error('Reaction error:', err.message, err.stack);
       socket.emit('error', 'Failed to add reaction');
     }
   });
@@ -269,7 +259,6 @@ io.on('connection', (socket) => {
     console.log(`Profile pic updated for ${username} in room ${room}: ${profilePicUrl}`);
   });
 
-  // Video call handling
   socket.on('start-video-call', ({ room, username, callType }) => {
     io.to(room).emit('call-notification', { initiator: username, callType });
     console.log(`${username} started a ${callType} call in room ${room}`);
