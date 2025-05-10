@@ -104,8 +104,6 @@ Open a Pull Request.
 
 This project is licensed under the MIT License.
 
-## Contact
 
-For questions or support, contact [rupeshbabu.sangoju@gmail.com] or open an issue on GitHub.
 
 
